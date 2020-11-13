@@ -40,7 +40,6 @@ clear ext NS_header banks neural
             % preallocate data matrices 
             if nct == 1
                 N.samples = length(DAT); 
-                MUA       = zeros(ceil(N.samples/r),N.neural); 
                 sLFP       = zeros(ceil(N.samples/r2),N.neural); % preallocating for downsampled data
             end
 
@@ -90,7 +89,17 @@ clear ext NS_header banks neural
     %Srt_aMUA(:,idx) = MUA(:,:);
     sortedLabels = NeuralLabels(idx);
     
+    %% save filtered data to be able to reuse it in different settings in the future analyses
     
+
+        filtdir ='C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\data\filt_data';
+
+        % save(strcat(trigdir,'\',ns6_filename, '_rectified_1000hz_aMUA.mat'), 'STIM_aMUA');
+        RelChan = Srt_sLFP(:,11); %store data of the relevant channel
+        save(strcat(filtdir,'\',ns6_filename, '_250hzhighpass_15khzdownsamp_sLFP.mat'), 'RelChan','-v7.3');
+        
+        filtChan = load( strcat('C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\data\filt_data\' ,ns6_filename, '_250hzhighpass_15khzdownsamp_sLFP.mat'));
+   
     %% Manual Spike Sorting
     
     % we need : thresholds (the same as used on BOSS)
@@ -102,12 +111,14 @@ clear ext NS_header banks neural
     refracPeriod = 30/r2; %samples/ 1000 microseconds
     
     spikes = nan(waveformLen, length(Srt_sLFP(:,11)));
+    spkIdxs = nan(length(Srt_sLFP(:,11)),1);
     for s = 1:length(Srt_sLFP(:,11))
        if (Srt_sLFP(s,11) >=th1 && Srt_sLFP(s-1,11)<th1) 
            %for ref = s:s+100/r2
           %         if Srt_sLFP(ref,11) <=th1
                       spk =Srt_sLFP(s-preThPeriod:s+8/r2+refracPeriod,11);
                       spikes(:,s) = spk(1:waveformLen); 
+                      spkIdxs(s) =s;
          % break
           %         end
                
@@ -119,6 +130,7 @@ clear ext NS_header banks neural
              %          if Srt_sLFP(ref,11) >=th2
                           spk =Srt_sLFP(s-preThPeriod:s+8/r2+refracPeriod,11);
                           spikes(:,s) = spk(1:waveformLen);
+                          spkIdxs(s) =s;
              %  break
               %         end
                   
@@ -127,8 +139,10 @@ clear ext NS_header banks neural
        end
     end
     
-   save('C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\analysis\160609_I_cinterocdrft013_spikes_s15khz_250hzbutter_dual_spikes.mat', 'spikes','-v7.3')
+   save('C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\analysis\160609_I_cinterocdrft013_spikes_s15khz_250hzbutter_dual_spikes.mat', 'spikes','-v7.3') %for data larger than 2GB, use version 7.3
    saved_spikes = load( 'C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\analysis\160609_I_cinterocdrft013_spikes_s15khz_250hzbutter_dual_spikes.mat');
+   save(strcat(filtdir,'\',ns6_filename, '_250hzhighpass_15khzdownsamp_spikes_timestamps.mat'), 'spkIdxs','-v7.3'); %save the spikes timestamps
+       
    
    figure();
     plot(Srt_sLFP(1:400,11))
@@ -180,7 +194,8 @@ end
 %% K means clustering algorithm
 
 idx = kmeans(score,7);
- 
+save(strcat(filtdir,'\',ns6_filename, '_250hzhighpass_15khzdownsamp_spikes_clustidx.mat'), 'idx','-v7.3'); %save the spikes timestamps
+  
 x = linspace(0,1.6,24);
 figure();
 for i =1:length(unique(idx))
@@ -227,14 +242,181 @@ grid on
 x = linspace(0,1.6,24);
 figure();
 for i =1:length(unique(idx))
-    subplot(1,length(unique(idx)),i)
+   h= subplot(1,length(unique(idx)),i)
     plot(x, 4*spikes(:, idx == i),'Color',col(i,:)) 
     ylabel('Voltage (microVolts)')
     xlabel('Time (ms)')
     title(sprintf('Cluster # %d, n = %d',[i, numel(find(idx ==i))]))
+    set(h,'position',get(h,'position').*[1 1 1.15 1])
+       
+      set(gca,'box','off')
 end
 
+%% Look at where spikes from the clustering analysis fall according to stimulation onsets and offsets
 
+
+
+trialIndexDir = 'C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\analysis\';
+selected_trials_idx = load( [trialIndexDir, 'selected_trials_idx']);
+
+
+STIMFileName = '160609_I_p01_uclust1_cinterocdrft_stab_fft_sig';
+STIM_file = load(['C:\Users\daumail\Documents\LGN_data\single_units\',STIMFileName]);
+
+ %1)get the stim onset times for all trials of the given penetration
+    STIM_onsets = STIM_file.STIM.photo_on;
+ %only keep the selected trials onsets
+    selected_STIM_onsets = cell2mat(STIM_onsets(selected_trials_idx.logicals(2).idx));
+    selected_STIM_onsets = selected_STIM_onsets(1:4:end);
+  
+ %need to scale up the triggering onset and offset times
+ %for data sampled af FS = 15kHz, ==> 15 X more than FS
+ %at 1000 Hz
+ pre2  = -7500;
+ post2 = 22500;
+
+ 
+ trigSpikeTimes  = trigData(spkIdxs,floor(selected_STIM_onsets./2),-pre2,post2); % this function is MLAnalysisOnline or nbanalysis. pre variable is in absolute units
+ trigClustIdxs  = squeeze(trigData(idx,floor(selected_STIM_onsets./2),-pre2,post2)); % this function is MLAnalysisOnline or nbanalysis. pre variable is in absolute units
+
+ trigsLFP  = trigData(Srt_sLFP(:,11),floor(selected_STIM_onsets./2),-pre2,post2); % this function is MLAnalysisOnline or nbanalysis. pre variable is in absolute units
+
+ 
+ 
+ %% make raster plot
+ filtdir ='C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\data\filt_data';
+ ns6_filename = '160609_I_cinterocdrft013.ns6';  
+ clustIdx = load(strcat(filtdir,'\',ns6_filename, '_250hzhighpass_15khzdownsamp_spikes_clustidx.mat')); %load the spikes clusters timestamps
+
+ %trigger the spike cluster idxs to stimuli onsets and offsets
+ trialIndexDir = 'C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\analysis\';
+ selected_trials_idx = load( [trialIndexDir, 'selected_trials_idx']);
+
+
+STIMFileName = '160609_I_p01_uclust89_cinterocdrft_stab_fft_sig'; %this session has also isolated units 160609_I_p01_uclust1_cinterocdrft_stab_fft_sig, 160609_I_p01_uclust64_cinterocdrft_stab_fft_sig, and 160609_I_p01_uclust89_cinterocdrft_stab_fft_sig
+STIM_file = load(['C:\Users\daumail\Documents\LGN_data\single_units\',STIMFileName]);
+
+ %1)get the stim onset times for all trials of the given penetration
+    STIM_onsets = STIM_file.STIM.photo_on;
+ %only keep the selected trials onsets
+    selected_STIM_onsets = cell2mat(STIM_onsets(selected_trials_idx.logicals(5).idx));
+    selected_STIM_onsets = selected_STIM_onsets(1:4:end);
+  
+ %need to scale up the triggering onset and offset times
+ %for data sampled af FS = 15kHz, ==> 15 X more than FS
+ %at 1000 Hz
+ pre2  = -7500;
+ post2 = 22500;
+ 
+ trigClustIdxs  = squeeze(trigData(clustIdx.idx,floor(selected_STIM_onsets./2),-pre2,post2)); % this function is MLAnalysisOnline or nbanalysis. pre variable is in absolute units
+
+ %raster plot of each cluster
+ figure();
+ for cl =1:length(unique(clustIdx.idx(~isnan(clustIdx.idx))))
+     h = subplot(2,4,cl);
+     spkcnt =0;
+     for tr =1:length(trigClustIdxs(1,:))
+         spikeTimes =find(trigClustIdxs(:,tr)==cl)';
+         x = repmat(spikeTimes,3,1);
+         y = nan(size(x));
+
+         if ~isempty(y)
+             y(1,:) = tr-1;
+             y(2,:) = tr;
+         end
+     plot(x/15-500,y,'Color','k')
+     hold on
+     spkcnt = spkcnt+length(spikeTimes);
+     end
+     title(sprintf('Cluster # %d, n = %d',[cl, spkcnt]))
+     set(h,'position',get(h,'position').*[1 1 1.15 1])
+       
+      set(gca,'box','off')
+      xlabel('Time (ms)')
+      ylabel('Trial number')
+      
+ end
+ 
+ %plot corresponding clusters spikes to make sure they are the same as
+ %precedently
+ 
+ saved_spikes = load( 'C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\analysis\160609_I_cinterocdrft013_spikes_s15khz_250hzbutter_dual_spikes.mat');
+x = linspace(0,1.6,24);
+figure();
+for i =1:length(unique(clustIdx.idx(~isnan(clustIdx.idx))))
+   h= subplot(1,length(unique(clustIdx.idx(~isnan(clustIdx.idx)))),i);
+    plot(x, 4*saved_spikes.spikes(:, clustIdx.idx == i),'Color',col(i,:)) 
+    ylabel('Voltage (microVolts)')
+    xlabel('Time (ms)')
+    title(sprintf('Cluster # %d, n = %d',[i, numel(find(clustIdx.idx ==i))]))
+    set(h,'position',get(h,'position').*[1 1 1.15 1])
+       
+      set(gca,'box','off')
+end
+
+% recover PCA results to compare with previous clusters
+cenSpikes = saved_spikes.spikes - mean(saved_spikes.spikes,1); %center the data on the mean
+
+[coeff, score, latent] = pca(cenSpikes'); 
+figure();
+for i =1:length(unique(clustIdx.idx(~isnan(clustIdx.idx))))
+x = score( clustIdx.idx == i,1);
+y = score( clustIdx.idx == i,2);
+z = score( clustIdx.idx == i,3);
+
+plot3(x,y,z,'.','Color',col(i,:))
+hold on
+end
+hold on
+yline(0)
+hold on
+xline(0)
+xlabel('PCA1')
+ylabel('PCA2')
+zlabel('PCA3')
+grid on
+ 
+%raster plot of 1 cluster against every other cluster
+%compare cluster 2 with all other clusters
+ figure();
+ for cl =1:length(unique(clustIdx.idx(~isnan(clustIdx.idx))))
+     
+     if ~(cl == 2)
+         h = subplot(2,4,cl);
+         spkcnt =0;
+         for tr =1:length(trigClustIdxs(1,:))
+
+             spikeTimes =find(trigClustIdxs(:,tr)==cl)';
+             x = repmat(spikeTimes,3,1);
+             y = nan(size(x));
+
+             if ~isempty(y)
+                 y(1,:) = tr-1;
+                 y(2,:) = tr;
+             end
+         plot(x/15-500,y,'Color','k')
+         hold on
+         clust2spikeTimes =find(trigClustIdxs(:,tr)==2)';
+         clust2x = repmat(clust2spikeTimes,3,1);
+         clust2y = nan(size(clust2x));
+
+             if ~isempty(clust2y)
+                 clust2y(1,:) = tr-1;
+                 clust2y(2,:) = tr;
+             end
+         plot(clust2x/15 -500, clust2y, 'Color','r')
+         hold on
+         spkcnt = spkcnt+length(spikeTimes);
+         end
+     end
+     title(sprintf('Cluster # %d vs cluster # 2, n = %d',[cl, spkcnt]))
+     set(h,'position',get(h,'position').*[1 1 1.15 1])
+       
+      set(gca,'box','off')
+      xlabel('Time (ms)')
+      ylabel('Trial number')
+      
+ end
 
     % calculate CSD before triggering to trials OR on the trial data BUT not on
     % the mean LFP. 
