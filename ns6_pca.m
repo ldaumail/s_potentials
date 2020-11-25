@@ -337,10 +337,21 @@ STIM_file = load(['C:\Users\daumail\Documents\LGN_data\single_units\',STIMFileNa
       
  end
  
- %plot corresponding clusters spikes to make sure they are the same as
+ %% plot corresponding clusters spikes to make sure they are the same as
  %precedently
- 
+ filtdir ='C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\data\filt_data';
+ ns6_filename = '160609_I_cinterocdrft013.ns6';  
+ clustIdx = load(strcat(filtdir,'\',ns6_filename, '_250hzhighpass_15khzdownsamp_spikes_clustidx.mat')); %load the spikes clusters timestamps
  saved_spikes = load( 'C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\analysis\160609_I_cinterocdrft013_spikes_s15khz_250hzbutter_dual_spikes.mat');
+col(1,:) =[86/255 86/255 86/255] ; %--dark grey 
+col(2,:) = [251/255 154/255 153/255]; % -- red
+col(3,:) = [146/255 197/255 222/255]; % -- blue
+col(4,:) =[194/255 165/255 207/255] ; %--purple
+col(5,:) = [253/255 174/255 97/255]; % -- orange
+col(6,:) = [166/255 219/255 160/255]; % -- green
+col(7,:) = [238/255 58/255 104/255]; % -- pink
+
+
 x = linspace(0,1.6,24);
 figure();
 for i =1:length(unique(clustIdx.idx(~isnan(clustIdx.idx))))
@@ -417,6 +428,273 @@ grid on
       ylabel('Trial number')
       
  end
+ 
+ %% convert spike times into spike rate with Poisson-like sdf convolution
+ 
+  filtdir ='C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\data\filt_data';
+ ns6_filename = '160609_I_cinterocdrft013.ns6';  
+ clustIdx = load(strcat(filtdir,'\',ns6_filename, '_250hzhighpass_15khzdownsamp_spikes_clustidx.mat')); %load the spikes clusters timestamps
+
+ %trigger the spike cluster idxs to stimuli onsets and offsets
+ trialIndexDir = 'C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\analysis\';
+ selected_trials_idx = load( [trialIndexDir, 'selected_trials_idx']);
+
+
+STIMFileName = '160609_I_p01_uclust89_cinterocdrft_stab_fft_sig'; %this session has also isolated units 160609_I_p01_uclust1_cinterocdrft_stab_fft_sig, 160609_I_p01_uclust64_cinterocdrft_stab_fft_sig, and 160609_I_p01_uclust89_cinterocdrft_stab_fft_sig
+STIM_file = load(['C:\Users\daumail\Documents\LGN_data\single_units\',STIMFileName]);
+
+ %1)get the stim onset times for all trials of the given penetration
+    STIM_onsets = STIM_file.STIM.photo_on;
+ %only keep the selected trials onsets
+    selected_STIM_onsets = cell2mat(STIM_onsets(selected_trials_idx.logicals(5).idx));
+    selected_STIM_onsets = selected_STIM_onsets(1:4:end);
+  
+ %need to scale up the triggering onset and offset times
+ %for data sampled af FS = 15kHz, ==> 15 X more than FS
+ %at 1000 Hz
+ pre2  = -7500;
+ post2 = 22500;
+ 
+ trigClustIdxs  = squeeze(trigData(clustIdx.idx,floor(selected_STIM_onsets./2),-pre2,post2)); % this function is MLAnalysisOnline or nbanalysis. pre variable is in absolute units
+
+ %sdftm     = [-0.3*Fs/r: 0.15*Fs/r + max(diff(TP,[],2)/r)];
+ %[spk,spktm,~] = intersect(sdftm,x,'stable') ;
+ Fs = 30000;
+ r = 2;
+ k         = jnm_kernel( 'psp', (20/1000) * (Fs/r) );
+
+ trigSdf = struct();
+  for cl =1:length(unique(clustIdx.idx(~isnan(clustIdx.idx))))
+         
+         sua = zeros(length(clustIdx.idx),1);
+         sua(find(clustIdx.idx==cl))=1;
+         sdf = conv(sua,k,'same') * Fs/r;
+         suaN = sprintf('sua%d', cl);
+         trigSdf.(suaN) = squeeze(trigData(sdf, floor(selected_STIM_onsets./2),-pre2,post2));
+  end
+  
+figure()
+plot(mean(trigSdf.sua7,2))
+
+%% Compare clusters to spike waveforms of single units isolated in this cluster computing the squared error between the single units spike waveforms and the clusters' spike waveforms
+
+%load the spikes and the cluster index of each spike
+ saved_spikes = load( 'C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\analysis\160609_I_cinterocdrft013_spikes_s15khz_250hzbutter_dual_spikes.mat');
+ spikes = saved_spikes.spikes(:,~all(isnan(saved_spikes.spikes)));
+
+ 
+ %Load stim file of a single unit containing the spike waveform.
+ 
+%this session contains isolated units 160609_I_p01_uclust1_cinterocdrft_stab_fft_sig, 160609_I_p01_uclust64_cinterocdrft_stab_fft_sig, and 160609_I_p01_uclust89_cinterocdrft_stab_fft_sig
+STIM_file1 = load('C:\Users\daumail\Documents\LGN_data\single_units\160609_I_p01_uclust1_cinterocdrft_stab_fft_sig');
+STIM_file2 = load('C:\Users\daumail\Documents\LGN_data\single_units\160609_I_p01_uclust64_cinterocdrft_stab_fft_sig');
+STIM_file3 = load('C:\Users\daumail\Documents\LGN_data\single_units\160609_I_p01_uclust89_cinterocdrft_stab_fft_sig');
+
+
+waveform(:,1) = decimate(mean(squeeze(STIM_file1.STIM.wf.waveForms(:,:,11,:)),1),2);
+waveform(:,2) = decimate(mean(squeeze(STIM_file2.STIM.wf.waveForms(:,:,11,:)),1),2);
+waveform(:,3) = decimate(mean(squeeze(STIM_file3.STIM.wf.waveForms(:,:,11,:)),1),2);
+
+%{
+figure()
+plot(waveform(15:30,:), 'Color', 'b')
+hold on
+plot(4*saved_spikes.spikes(1:15,1:10000), 'Color', 'r')
+%}
+  th1 = 39.25; %in ADC = 157
+  th2 = -41.25; %in ADC =-165
+  
+ 
+[~,max_location] = max(abs(waveform),[],1);
+sqdError = nan(11, length(spikes(1,:)), length(waveform(1,:)));
+for n = 1:length(waveform(1,:))
+   % for i =1:length(spikes(1,:))
+
+   for i =1:10
+       
+        for g =2:24 %g for growth
+            
+            
+
+            if spikes(g,i) >=th1 && spikes(g-1,i) <th1
+               % plot(4*saved_spikes.spikes(max_location(i)-5:max_location(i)+5,i), 'Color', 'r')
+               % hold on
+               for d =1:24 %decay 
+                   if (g+d<=24 && spikes(g+d,i)< spikes(g+d-1,i)) && (g+d-1+5 <= 24 && g+d-1-5 >=1)
+                       %normalize spike waveforms
+                       clustwf = (spikes(g+d-5-1:g+d+5-1,i)-min(spikes(g+d-5-1:g+d+5-1,i)))./(max(spikes(g+d-5-1:g+d+5-1,i))-min(spikes(g+d-5-1:g+d+5-1,i)));
+                       suwf = (waveform(max_location(n)-5:max_location(n)+5,n) - min(waveform(max_location(n)-5:max_location(n)+5,n)))./(max(waveform(max_location(n)-5:max_location(n)+5,n))-min(waveform(max_location(n)-5:max_location(n)+5,n)));
+                       sqdError(1:11,i,n) = (clustwf - suwf).^2;
+                   
+                   else
+                        if (g+d<=24 && spikes(g+d,i)< spikes(g+d-1,i)) && g+d-1+5 > 24
+                       clustwf = (spikes(g+d-5-1:end,i)-min(spikes(g+d-5-1:end,i)))./(max(spikes(g+d-5-1:end,i))-min(spikes(g+d-5-1:end,i)));
+                       suwf = (waveform(max_location(n)-5:max_location(n)+length(spikes(g+d-1:end,i))-1,n) - min(waveform(max_location(n)-5:max_location(n)+length(spikes(g+d-1:end,i))-1,n)))./(max(waveform(max_location(n)-5:max_location(n)+length(spikes(g+d-1:end,i))-1,n))-min(waveform(max_location(n)-5:max_location(n)+length(spikes(g+d-1:end,i))-1,n)));
+     
+                       sqdError(1:length(spikes(g+d-5-1:end,i)),i,n) = (clustwf - suwf).^2;
+                       
+                        
+                           else
+                               if (g+d<=24 && spikes(g+d,i)< spikes(g+d-1,i)) &&  g+d-1-5 <1
+                                clustwf = (spikes(1:g+d+5-1,i)-min(spikes(1:g+d+5-1,i)))./(max(spikes(1:g+d+5-1,i))-min(spikes(1:g+d+5-1,i)));
+                                suwf = (waveform(max_location(n)-(length(spikes(1:g+d-1,i))-1):max_location(n)+5,n) - min(waveform(max_location(n)-(length(spikes(1:g+d-1,i))-1):max_location(n)+5,n)))./(max(waveform(max_location(n)-(length(spikes(1:g+d-1,i))-1):max_location(n)+5,n))-min(waveform(max_location(n)-(length(spikes(1:g+d-1,i))-1):max_location(n)+5,n)));
+                          
+                                sqdError(1:length(spikes(1:g+d+5-1,i)),i,n) = (clustwf - suwf).^2;
+
+                               end
+                        end
+                   end
+                   break
+               end
+               
+            else
+                if spikes(g,i) <=th2 && spikes(g-1,i) >th2 
+                    clear d
+                    for d =1:24 %decay
+                       if (g+d<=24 && spikes(g+d,i)> spikes(g+d-1,i))  && (g+d-1+5 <= 24 && g+d-1-5 >=1)
+                           clustwf = (spikes(g+d-5-1:g+d+5-1,i)-min(spikes(g+d-5-1:g+d+5-1,i)))./(max(spikes(g+d-5-1:g+d+5-1,i))-min(spikes(g+d-5-1:g+d+5-1,i)));
+                           suwf = (waveform(max_location(n)-5:max_location(n)+5,n) - min(waveform(max_location(n)-5:max_location(n)+5,n)))./(max(waveform(max_location(n)-5:max_location(n)+5,n))-min(waveform(max_location(n)-5:max_location(n)+5,n)));
+                          sqdError(1:11,i,n) = (clustwf - suwf).^2;
+                            
+                            else
+                        if (g+d<=24 && spikes(g+d,i)> spikes(g+d-1,i)) && g+d-1+5 > 24 
+                       clustwf = (spikes(g+d-5-1:end,i)-min(spikes(g+d-5-1:end,i)))./(max(spikes(g+d-5-1:end,i))-min(spikes(g+d-5-1:end,i)));
+                       suwf = (waveform(max_location(n)-5:max_location(n)+length(spikes(g+d-1:end,i))-1,n) - min(waveform(max_location(n)-5:max_location(n)+length(spikes(g+d-1:end,i))-1,n)))./(max(waveform(max_location(n)-5:max_location(n)+length(spikes(g+d-1:end,i))-1,n))-min(waveform(max_location(n)-5:max_location(n)+length(spikes(g+d-1:end,i))-1,n)));
+     
+                       sqdError(1:length(spikes(g+d-5-1:end,i)),i,n) = (clustwf - suwf).^2;
+                        
+                           else
+                               if (g+d<=24 && spikes(g+d,i)> spikes(g+d-1,i)) &&  g+d-1-5 <1
+                                   clustwf = (spikes(1:g+d+5-1,i)-min(spikes(1:g+d+5-1,i)))./(max(spikes(1:g+d+5-1,i))-min(spikes(1:g+d+5-1,i)));
+                                   suwf = (waveform(max_location(n)-(length(spikes(1:g+d-1,i))-1):max_location(n)+5,n) - min(waveform(max_location(n)-(length(spikes(1:g+d-1,i))-1):max_location(n)+5,n)))./(max(waveform(max_location(n)-(length(spikes(1:g+d-1,i))-1):max_location(n)+5,n))-min(waveform(max_location(n)-(length(spikes(1:g+d-1,i))-1):max_location(n)+5,n)));
+                                   sqdError(1:length(spikes(1:g+d+5-1,i)),i,n) = (clustwf - suwf).^2;
+
+                              
+                               end
+                        end
+                       end
+                       break
+                    end
+                end
+                
+                
+
+            end
+            
+        end
+        
+    end
+
+end
+
+%{
+figure();
+plot(suwf)
+hold on
+plot(clustwf)
+hold on
+%}
+%% compute the sum of the squared error, keep the index of the smallest summed squared error (SSE)
+
+
+SSE = nan(length(spikes(1,:)), length(waveform(1,:)));
+for i =1:length(spikes(1,:))
+    for n =1:length(waveform(1,:))
+   SSE(i,n) = sum(sqdError(~isnan(sqdError(:,i,n)),i,n))./length(find(~isnan(sqdError(:,i,n)))); %normalize by number of non nan values, as some spikes could be compared over a complete -5:+5 sample nb
+    end
+end
+
+%%plot for each cluster the median SSE for each single unit spike
+%%waveform
+filtdir ='C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\data\filt_data';
+ns6_filename = '160609_I_cinterocdrft013.ns6';  
+clustIdx = load(strcat(filtdir,'\',ns6_filename, '_250hzhighpass_15khzdownsamp_spikes_clustidx.mat')); %load the spikes clusters timestamps
+
+clust = clustIdx.idx(~isnan(clustIdx.idx));
+
+col(1,:) =[86/255 86/255 86/255] ; %--dark grey 
+col(2,:) = [251/255 154/255 153/255]; % -- red
+col(3,:) = [146/255 197/255 222/255]; % -- blue
+col(4,:) =[194/255 165/255 207/255] ; %--purple
+col(5,:) = [253/255 174/255 97/255]; % -- orange
+col(6,:) = [166/255 219/255 160/255]; % -- green
+col(7,:) = [238/255 58/255 104/255]; % -- pink
+
+figure();
+x =1:3;
+lowCI = nan(length(waveform(1,:)),1);
+highCI = nan(length(waveform(1,:)),1);
+medianSSE = nan(length(waveform(1,:)),length(unique(clust)));
+   
+for cl = 1:length(unique(clust))
+    allClustSSE = SSE(clust ==cl,:);
+    low_idx = floor(0.5*length(allClustSSE(~isnan(allClustSSE(:,1)),1)) - 1.96*sqrt(0.5*length(allClustSSE(~isnan(allClustSSE(:,1)),1))*(1-0.5)));
+    high_idx = ceil(0.5*length(allClustSSE(~isnan(allClustSSE(:,1)),1)) + 1.96*sqrt(0.5*length(allClustSSE(~isnan(allClustSSE(:,1)),1))*(1-0.5)));
+ 
+     for n =1:length(waveform(1,:))
+          clustSSE = SSE(clust ==cl,n);
+          NotNanSSE =clustSSE(~isnan(clustSSE));
+         [~,sortIdx]  = sort(NotNanSSE);
+
+        lowCI(n,1) = NotNanSSE(sortIdx(low_idx));
+        highCI(n,1) = NotNanSSE(sortIdx(high_idx));
+        medianSSE(n,cl) = median(NotNanSSE);
+    end
+    subplot(1,7,cl)
+    plot(x,medianSSE(:,cl),'-*','Color', col(cl,:))
+    hold on
+    h1=ciplot(lowCI, highCI,x, col(cl,:),0.5);
+    set(h1, 'edgecolor','none')
+    %ylim([0 170000])
+    set(gca,'box','off')
+    set(gca, 'linewidth',2)
+    if cl > 1
+      ax1 = gca;                   
+      ax1.YAxis.Visible = 'off'; 
+    end
+  ylabel('Median SSE (normalized)')
+   if cl ==1
+      
+  xlabel('Single Unit #')
+   end
+   
+  title(sprintf('Cluster %d',cl)) 
+  
+end
+%legend('median','95%CI', 'Location', 'bestoutside')
+
+%% Plot the spike waveforms of KiloSort-ed Single Units
+STIM_file1 = load('C:\Users\daumail\Documents\LGN_data\single_units\160609_I_p01_uclust1_cinterocdrft_stab_fft_sig');
+STIM_file2 = load('C:\Users\daumail\Documents\LGN_data\single_units\160609_I_p01_uclust64_cinterocdrft_stab_fft_sig');
+STIM_file3 = load('C:\Users\daumail\Documents\LGN_data\single_units\160609_I_p01_uclust89_cinterocdrft_stab_fft_sig');
+
+
+waveform(:,1) = mean(squeeze(STIM_file1.STIM.wf.waveForms(:,:,11,:)),1);
+waveform(:,2) = mean(squeeze(STIM_file2.STIM.wf.waveForms(:,:,11,:)),1);
+waveform(:,3) = mean(squeeze(STIM_file3.STIM.wf.waveForms(:,:,11,:)),1);
+
+semWaveform(:,1) = std(squeeze(STIM_file1.STIM.wf.waveForms(:,:,11,:)),0,1)./sqrt(length(squeeze(STIM_file1.STIM.wf.waveForms(:,:,11,1))));
+semWaveform(:,2) = std(squeeze(STIM_file2.STIM.wf.waveForms(:,:,11,:)),0,1)./sqrt(length(squeeze(STIM_file2.STIM.wf.waveForms(:,:,11,1))));
+semWaveform(:,3) = std(squeeze(STIM_file3.STIM.wf.waveForms(:,:,11,:)),0,1)./sqrt(length(squeeze(STIM_file3.STIM.wf.waveForms(:,:,11,1))));
+col(1,:) =[86/255 86/255 86/255] ; %--dark grey 
+col(2,:) = [251/255 154/255 153/255]; % -- red
+col(3,:) = [146/255 197/255 222/255]; % -- blue
+
+figure();
+x =linspace(0,(81/30000)*1000,81);
+for i =1:3
+    h =subplot(1,3,i)
+    plot(x,waveform(:,i), 'Color', col(i,:))
+    hold on
+    h1 = ciplot(waveform(:,i)-1.96*semWaveform(:,i),waveform(:,i)+1.96*semWaveform(:,i), x, col(i,:), 0.5);
+    set(h1, 'edgecolor','none') 
+    set(h,'position',get(h,'position').*[1 1 1.15 1])
+    set(gca, 'linewidth',2)
+    set(gca,'box','off')
+    ylabel('Voltage (microVolt)')
+    xlabel('time (ms)')
+    title(sprintf('Single Unit %d',i))
+end
 
     % calculate CSD before triggering to trials OR on the trial data BUT not on
     % the mean LFP. 
