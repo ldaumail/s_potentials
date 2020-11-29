@@ -89,7 +89,7 @@ clear ext NS_header banks neural
     %Srt_aMUA(:,idx) = MUA(:,:);
     sortedLabels = NeuralLabels(idx);
     
-    %% save filtered data to be able to reuse it in different settings in the future analyses
+    %% save filtered data to be able to reuse it in different settings in future analyses
     
 
         filtdir ='C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\data\filt_data';
@@ -98,61 +98,76 @@ clear ext NS_header banks neural
         RelChan = Srt_sLFP(:,11); %store data of the relevant channel
         save(strcat(filtdir,'\',ns6_filename, '_250hzhighpass_15khzdownsamp_sLFP.mat'), 'RelChan','-v7.3');
         
-        filtChan = load( strcat('C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\data\filt_data\' ,ns6_filename, '_250hzhighpass_15khzdownsamp_sLFP.mat'));
-   
     %% Manual Spike Sorting
     
+
+    ns6_filename = '160609_I_cinterocdrft013.ns6';  
+    filtChan = load( strcat('C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\data\filt_data\' ,ns6_filename, '_250hzhighpass_15khzdownsamp_sLFP.mat'));
+    Srt_sLFP = filtChan.RelChan;
     % we need : thresholds (the same as used on BOSS)
     th1 = 39.25; %in ADC = 157
     th2 = -41.25; %in ADC =-165
+    r2 =2;
+    waveformLen = 100/r2 ; % samples /? 
+    preThPeriod =40/r2 ; % samples/ ? microseconds
+    refracPeriod = 30/r2; %samples/ ? microseconds
     
-    waveformLen = 48/r2 ; % samples / 1600 microseconds
-    preThPeriod =10/r2 ; % samples/ 333 microseconds
-    refracPeriod = 30/r2; %samples/ 1000 microseconds
-    
-    spikes = nan(waveformLen, length(Srt_sLFP(:,11)));
-    spkIdxs = nan(length(Srt_sLFP(:,11)),1);
-    for s = 1:length(Srt_sLFP(:,11))
-       if (Srt_sLFP(s,11) >=th1 && Srt_sLFP(s-1,11)<th1) 
+    spikes = nan(waveformLen, length(Srt_sLFP));
+    spkIdxs = nan(length(Srt_sLFP),1);
+    spkLength = nan(length(Srt_sLFP),1);
+    for s = preThPeriod+1:length(Srt_sLFP(:,1))
+        spk =0;
+       if (Srt_sLFP(s,1) >=th1 && Srt_sLFP(s-1,1)<th1) 
            %for ref = s:s+100/r2
           %         if Srt_sLFP(ref,11) <=th1
-                      spk =Srt_sLFP(s-preThPeriod:s+8/r2+refracPeriod,11);
-                      spikes(:,s) = spk(1:waveformLen); 
+                      spk =Srt_sLFP(s-preThPeriod:s+8/r2+refracPeriod,1);
+                      if all(isnan(spikes(:,s-8:s-1)))
+                      spikes(1:length(spk),s) = spk(:); 
                       spkIdxs(s) =s;
+                      end
          % break
           %         end
                
          %  end
            
        else 
-           if (Srt_sLFP(s,11) <= th2 && Srt_sLFP(s-1,11)>th2)
+           if (Srt_sLFP(s,1) <= th2 && Srt_sLFP(s-1,1)>th2)
              %  for ref = s:s+100/r2
              %          if Srt_sLFP(ref,11) >=th2
-                          spk =Srt_sLFP(s-preThPeriod:s+8/r2+refracPeriod,11);
-                          spikes(:,s) = spk(1:waveformLen);
+                          spk =Srt_sLFP(s-preThPeriod:s+8/r2+refracPeriod,1);
+                          if all(isnan(spikes(:,s-8:s-1)))
+                          spikes(1:length(spk),s) = spk(:);
                           spkIdxs(s) =s;
+                          end
              %  break
               %         end
                   
               % end
            end
+           spkLength(s) =length(spk);
        end
+       
     end
+
+    minLength = min(spkLength);
+    spikes = spikes(1:minLength,:);
     
-   save('C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\analysis\160609_I_cinterocdrft013_spikes_s15khz_250hzbutter_dual_spikes.mat', 'spikes','-v7.3') %for data larger than 2GB, use version 7.3
-   saved_spikes = load( 'C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\analysis\160609_I_cinterocdrft013_spikes_s15khz_250hzbutter_dual_spikes.mat');
-   save(strcat(filtdir,'\',ns6_filename, '_250hzhighpass_15khzdownsamp_spikes_timestamps.mat'), 'spkIdxs','-v7.3'); %save the spikes timestamps
+   save('C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\analysis\160609_I_cinterocdrft013_spikes_s15khz_250hzbutter_dual_spikes_11272020.mat', 'spikes','-v7.3') %for data larger than 2GB, use version 7.3
+   saved_spikes = load( 'C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\analysis\160609_I_cinterocdrft013_spikes_s15khz_250hzbutter_dual_spikes_11272020.mat');
+   
+   filtdir ='C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\data\filt_data';
+   save(strcat(filtdir,'\',ns6_filename, '_250hzhighpass_15khzdownsamp_spikes_timestamps_11272020.mat'), 'spkIdxs','-v7.3'); %save the spikes timestamps
        
    
    figure();
     plot(Srt_sLFP(1:400,11))
     
- 
-    spikes = spikes(:,~all(isnan(spikes)));
+  spikes = saved_spikes.spikes(:,~all(isnan(saved_spikes.spikes)));
+    %spikes = spikes(:,~all(isnan(spikes)));
     
-    x = linspace(0,1.6,24);
+    x = linspace(0,2.6,40);
     figure();
-    plot(x, 4*spikes)
+    plot(x, 4*spikes(:,1:100))
     ylabel('Voltage (microVolts)')
     xlabel('Time (ms)')
     
@@ -194,9 +209,9 @@ end
 %% K means clustering algorithm
 
 idx = kmeans(score,7);
-save(strcat(filtdir,'\',ns6_filename, '_250hzhighpass_15khzdownsamp_spikes_clustidx.mat'), 'idx','-v7.3'); %save the spikes timestamps
+save(strcat(filtdir,'\',ns6_filename, '_250hzhighpass_15khzdownsamp_spikes_clustidx_11272020.mat'), 'idx','-v7.3'); %save the spikes timestamps
   
-x = linspace(0,1.6,24);
+x = linspace(0,2.6,40);
 figure();
 for i =1:length(unique(idx))
     subplot(1,length(unique(idx)),i)
@@ -221,8 +236,8 @@ col(7,:) = [238/255 58/255 104/255]; % -- pink
 figure();
 for i =1:length(unique(idx))
 x = score( idx == i,1);
-y = score( idx == i,2);
-z = score( idx == i,3);
+y = score( idx == i,3);
+z = score( idx == i,2);
 
 plot3(x,y,z,'.','Color',col(i,:))
 hold on
@@ -232,14 +247,14 @@ yline(0)
 hold on
 xline(0)
 xlabel('PCA1')
-ylabel('PCA2')
-zlabel('PCA3')
+ylabel('PCA3')
+zlabel('PCA2')
 grid on
 
 
 %% Plot spikes with K means clusters colors
  
-x = linspace(0,1.6,24);
+x = linspace(0,2.6,40);
 figure();
 for i =1:length(unique(idx))
    h= subplot(1,length(unique(idx)),i)
@@ -479,7 +494,7 @@ plot(mean(trigSdf.sua7,2))
 %% Compare clusters to spike waveforms of single units isolated in this cluster computing the squared error between the single units spike waveforms and the clusters' spike waveforms
 
 %load the spikes and the cluster index of each spike
- saved_spikes = load( 'C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\analysis\160609_I_cinterocdrft013_spikes_s15khz_250hzbutter_dual_spikes.mat');
+ saved_spikes = load( 'C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\analysis\160609_I_cinterocdrft013_spikes_s15khz_250hzbutter_dual_spikes_11272020.mat');
  spikes = saved_spikes.spikes(:,~all(isnan(saved_spikes.spikes)));
 
  
@@ -500,7 +515,7 @@ figure()
 plot(waveform(15:30,:), 'Color', 'b')
 hold on
 plot(4*saved_spikes.spikes(1:15,1:10000), 'Color', 'r')
-%}
+
   th1 = 39.25; %in ADC = 157
   th2 = -41.25; %in ADC =-165
   
@@ -586,6 +601,24 @@ for n = 1:length(waveform(1,:))
     end
 
 end
+%}
+
+ th1 = 39.25; %in ADC = 157
+  th2 = -41.25; %in ADC =-165
+  
+ 
+[~,max_location] = max(abs(waveform),[],1);
+[~,max_ClustLoc] = max(abs(spikes(10:34,:)),[],1);
+sqdError = nan(11, length(spikes(1,:)), length(waveform(1,:)));
+for n = 1:length(waveform(1,:))
+    for i =1:length(spikes(1,:))
+
+                       %clustwf = (spikes(max_ClustLoc(i)-5+10:max_ClustLoc(i)+5+10,i)-min(spikes(max_ClustLoc(i)-5+10:max_ClustLoc(i)+5+10,i)))./(max(spikes(max_ClustLoc(i)-5+10:max_ClustLoc(i)+5+10,i))-min(spikes(max_ClustLoc(i)-5+10:max_ClustLoc(i)+5+10,i)));
+                       %suwf = (waveform(max_location(n)-5:max_location(n)+5,n) - min(waveform(max_location(n)-5:max_location(n)+5,n)))./(max(waveform(max_location(n)-5:max_location(n)+5,n))-min(waveform(max_location(n)-5:max_location(n)+5,n)));
+                      % sqdError(1:11,i,n) = (clustwf - suwf).^2;
+                        sqdError(1:11,i,n) = (4*spikes(max_ClustLoc(i)-5+10:max_ClustLoc(i)+5+10,i) - waveform(max_location(n)-5:max_location(n)+5,n)).^2;
+    end
+end
 
 %{
 figure();
@@ -600,7 +633,7 @@ hold on
 SSE = nan(length(spikes(1,:)), length(waveform(1,:)));
 for i =1:length(spikes(1,:))
     for n =1:length(waveform(1,:))
-   SSE(i,n) = sum(sqdError(~isnan(sqdError(:,i,n)),i,n))./length(find(~isnan(sqdError(:,i,n)))); %normalize by number of non nan values, as some spikes could be compared over a complete -5:+5 sample nb
+   SSE(i,n) = sum(sqdError(~isnan(sqdError(:,i,n)),i,n))./length(find(~isnan(sqdError(:,i,n)))); %normalize by number of non nan values, as spikes could be compared over a -5:+5 sample nb for a 15 kHz dataset with a -10:+10 in a 30kHz dataset
     end
 end
 
@@ -608,7 +641,7 @@ end
 %%waveform
 filtdir ='C:\Users\daumail\Documents\LGN_data\single_units\s_potentials_analysis\data\filt_data';
 ns6_filename = '160609_I_cinterocdrft013.ns6';  
-clustIdx = load(strcat(filtdir,'\',ns6_filename, '_250hzhighpass_15khzdownsamp_spikes_clustidx.mat')); %load the spikes clusters timestamps
+clustIdx = load(strcat(filtdir,'\',ns6_filename, '_250hzhighpass_15khzdownsamp_spikes_clustidx_11272020.mat')); %load the spikes clusters timestamps
 
 clust = clustIdx.idx(~isnan(clustIdx.idx));
 
@@ -645,16 +678,18 @@ for cl = 1:length(unique(clust))
     hold on
     h1=ciplot(lowCI, highCI,x, col(cl,:),0.5);
     set(h1, 'edgecolor','none')
-    %ylim([0 170000])
+   % ylim([0.02 0.334])
+   ylim([0 100000])
+   
     set(gca,'box','off')
     set(gca, 'linewidth',2)
     if cl > 1
       ax1 = gca;                   
       ax1.YAxis.Visible = 'off'; 
     end
-  ylabel('Median SSE (normalized)')
+  ylabel('Median SSE (microVolts^2)')
    if cl ==1
-      
+  xtickformat('%i')
   xlabel('Single Unit #')
    end
    
